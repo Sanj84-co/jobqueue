@@ -18,3 +18,10 @@ func TestSubmitCreatesPendingJob(t *testing.T) {
 		t.Errorf("status = %v, want %v", job.Status, Pending)
 	}
 }
+func TestSubmitRejectEmptyPayload(t *testing.T) {
+	q := NewQueue()
+	_, _, err := q.Submit("")
+	if err == nil {
+		t.Fatalf("Submit returned an error: %v", err)
+	}
+}
