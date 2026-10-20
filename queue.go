@@ -18,7 +18,7 @@ type Queue struct {
 	jobs    map[int]*Job //same jib sits in the map and travels through the channels
 	mu      sync.Mutex
 	queue   chan *Job
-	counter int
+	counter int //only lists data fields.
 }
 
 const (
@@ -58,5 +58,27 @@ func (q *Queue) Get(id int) (*Job, bool) {
 	job, ok := q.jobs[id]
 	return job, ok
 }
+func (q *Queue) Work(handler func(string) error) {
+	for job := range q.queue {
+		q.mu.Lock()
+		job.Status = Running
+		job.Attempts++
+		q.mu.Unlock()
+		err := handler(job.Payload)
+		if err == nil {
+			q.mu.Lock()
+			job.Status = Done
+			q.mu.Unlock()
+			job.Result <- job
+		}
+	}
+}
+func (q *Queue) Start(handler func(string) error) {
+	//go handler is in the wrong place
+	go q.Work(handler)
 
+}
+
+//Sart launches the worker loop in. goroutine. the worker takes each job from the channl marks i running
+//increases its attempts unlocks it. call the handler if the handler is nil, it locks the job done returns the job to resukt channl
 //we need a name here. you are just getting a copy of the pointer

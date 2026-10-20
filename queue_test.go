@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+	"time"
+)
 
 func TestSubmitCreatesPendingJob(t *testing.T) {
 	q := NewQueue() // we will write the condtructor
@@ -24,4 +28,25 @@ func TestSubmitRejectEmptyPayload(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Submit returned an error: %v", err)
 	}
+}
+func TestWorkerCompletesJob(t *testing.T) {
+	q := NewQueue()
+	q.Start(func(u string) error { //we dont want to start a goroutine right now.
+		return nil
+	})
+	_, ch, err := q.Submit("Create email")
+	if err != nil {
+		t.Fatalf("Submit retuned an error %v", err)
+	}
+	select { //make sure to take care of when the goroutine itself is hanging
+	case msg := <-ch:
+		if msg.Status == Done {
+			fmt.Println("Success")
+		} else {
+			t.Fatalf("Retuned an error %v", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("Timeout reached")
+	}
+
 }
