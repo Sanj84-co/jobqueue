@@ -58,24 +58,37 @@ func (q *Queue) Get(id int) (*Job, bool) {
 	job, ok := q.jobs[id]
 	return job, ok
 }
-func (q *Queue) Work(handler func(string) error) {
+func (q *Queue) work(handler func(string) error) {
 	for job := range q.queue {
-		q.mu.Lock()
-		job.Status = Running
-		job.Attempts++
-		q.mu.Unlock()
-		err := handler(job.Payload)
-		if err == nil {
+		for job.Attempts < 3 {
 			q.mu.Lock()
-			job.Status = Done
+			job.Status = Running
+			job.Attempts++
 			q.mu.Unlock()
-			job.Result <- job
+			err := handler(job.Payload)
+			if err == nil {
+				q.mu.Lock()
+				job.Status = Done
+				q.mu.Unlock()
+				break
+			} else {
+				q.mu.Lock()
+				job.Error = err.Error()
+				q.mu.Unlock()
+			}
+
 		}
+		if job.Status != Done {
+			q.mu.Lock()
+			job.Status = Failed
+			q.mu.Unlock()
+		}
+		job.Result <- job
 	}
 }
 func (q *Queue) Start(handler func(string) error) {
 	//go handler is in the wrong place
-	go q.Work(handler)
+	go q.work(handler)
 
 }
 

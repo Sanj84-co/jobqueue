@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -44,6 +45,30 @@ func TestWorkerCompletesJob(t *testing.T) {
 			fmt.Println("Success")
 		} else {
 			t.Fatalf("Retuned an error %v", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("Timeout reached")
+	}
+
+}
+func TestWorkerFailsAfterThreeAttempts(t *testing.T) {
+	q := NewQueue()
+	q.Start(func(u string) error {
+		return errors.New("Simulated failure")
+	})
+	_, ch, err := q.Submit("Success")
+	if err != nil {
+		t.Fatalf("Submit returned an error %v", err)
+	}
+	select {
+	case msg := <-ch:
+		if msg.Status != Failed || msg.Attempts != 3 {
+			if msg.Status != Failed {
+				t.Fatalf("Wrong Status ")
+			} else {
+				t.Fatalf("Test did not fail after 3 attempts")
+			}
+
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatal("Timeout reached")
