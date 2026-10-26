@@ -19,6 +19,8 @@ type Queue struct {
 	mu      sync.Mutex
 	queue   chan *Job
 	counter int //only lists data fields.
+	closed  bool
+	done    chan struct{} //done is closed when our queue is done
 }
 
 const (
@@ -28,17 +30,38 @@ const (
 	Failed  Status = "failed"
 )
 
-func NewQueue() *Queue {
-	return &Queue{
+func NewQueue(handler func(string) error) *Queue {
+	q := &Queue{
 		jobs:  make(map[int]*Job),
-		queue: make(chan *Job, 100), //when buffer is full, we send blocks and wait for a task to be completed.
+		queue: make(chan *Job, 100), //when buffer is full, we send block and wait for a task to be completed.
+		done:  make(chan struct{}),
 	}
+	go q.work(handler)
+	return q
+
 }
+func (q *Queue) Close() {
+	q.mu.Lock()
+	if q.closed {
+		q.mu.Unlock()
+		return
+	}
+	q.closed = true
+	close(q.queue)
+	q.mu.Unlock()
+	<-q.done
+
+} // closes thr queue channel so new jobs cant come in . Workers finidhes remaining jobs in bugger and ends
+// .then we close done, the moment it is closed we finish
 func (q *Queue) Submit(payload string) (int, <-chan *Job, error) {
 	if payload == "" {
 		return 0, nil, errors.New("payload cannot be empty")
 	}
 	q.mu.Lock()
+	if q.closed {
+		q.mu.Unlock()
+		return 0, nil, errors.New("Channel closed already")
+	}
 	q.counter++
 	job := &Job{ //make is only for maps and slices.
 		ID:      q.counter,
@@ -59,6 +82,7 @@ func (q *Queue) Get(id int) (*Job, bool) {
 	return job, ok
 }
 func (q *Queue) work(handler func(string) error) {
+	defer close(q.done)
 	for job := range q.queue {
 		for job.Attempts < 3 {
 			q.mu.Lock()
@@ -85,11 +109,6 @@ func (q *Queue) work(handler func(string) error) {
 		}
 		job.Result <- job
 	}
-}
-func (q *Queue) Start(handler func(string) error) {
-	//go handler is in the wrong place
-	go q.work(handler)
-
 }
 
 //Sart launches the worker loop in. goroutine. the worker takes each job from the channl marks i running
