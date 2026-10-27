@@ -51,7 +51,7 @@ func (q *Queue) Close() {
 	q.mu.Unlock()
 	<-q.done
 
-} // closes thr queue channel so new jobs cant come in . Workers finidhes remaining jobs in bugger and ends
+} // closes thr queue channel so new jobs cant come in . Workers finidhes remaining jobs in and ends
 // .then we close done, the moment it is closed we finish
 func (q *Queue) Submit(payload string) (int, <-chan *Job, error) {
 	if payload == "" {
@@ -60,18 +60,28 @@ func (q *Queue) Submit(payload string) (int, <-chan *Job, error) {
 	q.mu.Lock()
 	if q.closed {
 		q.mu.Unlock()
-		return 0, nil, errors.New("Channel closed already")
+		return 0, nil, errors.New("queue is closed")
 	}
 	q.counter++
-	job := &Job{ //make is only for maps and slices.
+	job := &Job{ //make is only for maps and slices and channels.
 		ID:      q.counter,
 		Payload: payload,
 		Status:  Pending,
 		Result:  make(chan *Job, 1),
 	}
 	q.jobs[job.ID] = job //m[key] = value for maps ch<-value for channels
-	q.mu.Unlock()        //if you held the lock ans buffer is full send would wait and everything elsr has to wait for the lock
-	q.queue <- job
+	//if you held the lock ans buffer is full send would wait and everything elsr has to wait for the lock
+	//a send that cant wait
+	select {
+	case q.queue <- job:
+
+	default:
+		delete(q.jobs, job.ID)
+		q.mu.Unlock()
+		return 0, nil, errors.New("queue is full!")
+	}
+	q.mu.Unlock()
+
 	return job.ID, job.Result, nil
 
 }

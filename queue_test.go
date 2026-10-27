@@ -11,7 +11,7 @@ import (
 // check jobs 2 and make sure it pending trhen close
 func TestSubmitCreatesPendingJob(t *testing.T) {
 	release := make(chan struct{})
-
+	//deadlock: gorotuines wwait for racg ther or a lock that is never released everything freezes
 	q := NewQueue(
 		(func(u string) error { //we dont want to start a goroutine right now.
 			<-release
