@@ -141,10 +141,10 @@ func TestCloseFinishesPendingJob(t *testing.T) {
 			} else {
 				if msg.Status != Done {
 					t.Fatalf("Wrong Status ")
-				} else {
-					t.Fatalf("Succeed in attemps %d", msg.Attempts)
 				}
 			}
+		default:
+			t.Errorf("result not ready after Close returned")
 		}
 	}
 }
