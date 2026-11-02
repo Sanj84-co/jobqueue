@@ -137,10 +137,29 @@ Still open:
 
 ### v1: single process, in-memory, one worker (complete)
 Shipped: Submit/Get, single worker, up to 3 attempts with immediate retry, failed state with recorded error, per-job result channels, graceful Close, reject-when-full, race-detector-clean tests.
+### v2: multiple concurrent workers (designed)
 
-### v2: multiple concurrent workers
-- Configurable worker pool; shutdown waits for all workers (`sync.WaitGroup`).
-- Re-check shared state: test handlers that count calls must count per job and be concurrency-safe.
+**Interface change**
+- `NewQueue(workers int, handler func(string) error) (*Queue, error)`
+- A worker count below 1 is rejected with an error ("invalid worker count") and `nil` for the queue. The count is checked before anything is created or started, so a rejected call never leaves goroutines running.
+- The count is fixed at creation; there is no setter. A queue is valid from the moment it exists.
+
+**Shutdown with N workers**
+- The `done` channel is replaced by a `sync.WaitGroup` in the `Queue` struct.
+- `NewQueue` calls `Add(N)` **before** starting any workers (if workers called `Add` themselves, `Close` could call `Wait` before they started and return too early).
+- Each worker runs `defer wg.Done()` at the top of `work`.
+- `Close` closes the queue channel, unlocks, then calls `Wait()`; it returns only once every worker has finished.
+- Why not one shared `done` channel: the first worker to finish would close it while others are still running, and the second worker's `close` would panic.
+
+**What is already safe with N workers**
+- The queue channel gives each job to exactly one worker, so a job is never claimed twice.
+- The job map, ID counter, and all job state changes are under the mutex.
+- The worker's unlocked reads of `Attempts` and `Status` stay safe: each job is handled by exactly one worker, its only writer.
+
+**Testing changes**
+- Test handlers that count calls must count **per job** (a map keyed by a unique payload) and be **concurrency-safe** (a mutex). A single shared counter would race between workers and would count all attempts of all jobs instead of one job's attempts.
+- **Parallelism test:** each handler sends on a `started` channel (buffer N), then blocks on a `release` channel. The test submits N jobs and must receive N `started` signals within a timeout; if any times out, the jobs did not run concurrently. Then it closes `release` and calls `Close`.
+
 
 ### v3: persistence (jobs survive a crash)
 - Durable job storage in Postgres; recovery on restart; at-least-once delivery.
